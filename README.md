@@ -11,6 +11,6 @@ Given a list of target words and user-provided websites, collect texts containin
 - Universal search agent across any website (search is done by another service, ex: Google)
 - Universal parser across any website (no captcha bypassing)
 - Lemmatization or semantic word matching (exact word matching only)
-- Using AI
+- Usage of AI
 - Auto-traslation of collected texts
 - Automatic distractor generation

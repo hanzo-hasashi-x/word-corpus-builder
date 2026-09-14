@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "word-corpus-builder"
+version = "0.1.0"
+description = "A tool for generating structured text datasets for language learning."
+authors = [{name = "Ivan Usan", email = "iusan7756@gmail.com"}]
+requires-python = ">= 3.9.21"
+dependencies = []
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
