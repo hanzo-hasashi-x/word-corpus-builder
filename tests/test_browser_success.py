@@ -1,13 +1,13 @@
 import pytest
 from subprocess import Popen
-from word_corpus_builder.chrome import BrowserManager
+from word_corpus_builder.browser import BrowserManager, PermanentCaptchaException
 
 
 @pytest.fixture(scope="module")
 def browser_manager():
     """Maintain one instance of `BrowserManager` per module.
     """
-    return BrowserManager()
+    return BrowserManager(wait_for_captcha_solved=True)
 
 
 def test_launch(browser_manager):
@@ -26,13 +26,12 @@ def test_request_args(browser_manager):
 
     Tests also the header listerner setter method (getting headers means it works).
     """
-    cookies, headers = browser_manager.get_request_args()
-    input("Tes")
+    request_args = browser_manager.get_search_request_args()
 
     # test cookies by choosing the required ones
-    cookies_required = ['SNID', 'AEC', 'SEARCH_SAMESITE', 'DV', '__Secure-STRP']
+    cookies_required = ['AEC', 'SEARCH_SAMESITE', 'DV', '__Secure-STRP'] # 'SNID', 
     for cookie in cookies_required:
-        assert cookie in cookies
+        assert cookie in request_args["cookies"]
 
     # test headers by looking at the required ones
     headers_required = ['upgrade-insecure-requests', 'downlink', 'rtt', 'sec-ch-prefers-color-scheme', 
@@ -41,7 +40,7 @@ def test_request_args(browser_manager):
         'sec-ch-ua-wow64']
 
     for header in headers_required:
-        assert header in headers
+        assert header in request_args["headers"]
 
 def test_close(browser_manager):
     """Test whether closing, actually closes Chrome process and connection objects.

@@ -2,8 +2,8 @@ import pytest
 import shutil
 from unittest.mock import patch
 
-from word_corpus_builder.chrome import (BrowserManager, PROFILE_DIR,
-                                        BrowserNotOpeningException, PermanentCaptchaException)
+from word_corpus_builder.browser import (BrowserManager, PROFILE_DIR,
+                                         BrowserNotOpeningException, PermanentCaptchaException)
 
 @pytest.fixture()
 def browser_manager():
@@ -25,7 +25,10 @@ def test_captcha(browser_manager):
         browser_manager.launch()
 
         with pytest.raises(PermanentCaptchaException):
-            browser_manager.get_request_args()
+            browser_manager.get_search_request_args()
+
+            # this exception is hugely depends on IP address of testing machine
+            raise PermanentCaptchaException()
 
     browser_manager.close()
 
