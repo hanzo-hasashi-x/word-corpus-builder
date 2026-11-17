@@ -1,5 +1,5 @@
 import os
-from sys import stderr
+import re
 import time
 import platform
 import subprocess
@@ -22,7 +22,7 @@ if platform.system() == 'Windows':
 data_dir = local_dir / "word-corpus-builder"
 
 PROFILE_DIR = data_dir / "profile"
-URL = "https://www.google.com/search?q=%22google%22&oq=%22google%22&sourceid=chrome&ie=UTF-8"
+URL = "https://www.google.com/search?q=%22murder%22&oq=%22murder%22&sourceid=chrome&ie=UTF-8"
 
 
 class BrowserNotOpeningException(Exception):
@@ -65,7 +65,8 @@ class BrowserManager:
     """Manage a persistent Playwright browser session."""
 
 
-    def __init__(self) -> None:
+    def __init__(self, wait_for_captcha_solved=False) -> None:
+        self.wait_for_captcha_solved = wait_for_captcha_solved
         self.restarted = False
 
     def launch(self) -> None:
@@ -86,7 +87,7 @@ class BrowserManager:
         self.browser = self.playwright.chromium.connect_over_cdp(f"http://localhost:{PORT}")
         self.context = self.browser.contexts[0]
 
-    def set_header_listener(self, page):
+    def set_header_listener(self, page, url):
         """Set up a request listener, to collect Google specific headers.
 
         Args:
@@ -98,45 +99,38 @@ class BrowserManager:
         captured = {}
 
         def handle_request(req):
-            # Capture the document navigation to Google Search
+            # Capture the document navigation
             if (
-                req.is_navigation_request()
-                and req.resource_type == "document"
-                and req.url.startswith("https://www.google.com/search?")
+                req.resource_type == "document"
+                and req.url.startswith(url)
             ):
-                captured.update(req.headers)
-        
+                captured.update(
+                    {key: value for key, value in req.all_headers().items() 
+                     if not key.startswith(":") and key != 'cookie' and key!="accept-encoding"})
+ 
         page.on("request", handle_request)
+        return captured, lambda: page.remove_listener('request', handle_request)
 
-        return captured
-
-    def get_request_args(self) -> tuple[dict, dict]:
-        """Get headers and cookies required for requests to Google.
-
-        Preconditions:
-            - `launch()` has been called.
-            - `close()` has not been called.
-
-        Returns:
-            A tuple of cookies dictionary and headers dictionary sufficient to make
-            a working request to https://www.google.com search.
-        """
-        page = self.context.new_page()
-        headers = self.set_header_listener(page)
-    
-        page.goto(URL, wait_until="commit", timeout=10000)
-
+    def solve_captcha(self, page):
         try:
             page.get_by_title("reCAPTCHA").wait_for(timeout=2000)
 
             if self.restarted:
-                raise PermanentCaptchaException("Browser stuck on the CAPTCHA permanently.")
-            
-            self.close()
-            self.launch()
-
-            self.restarted = True
-            return self.get_request_args()
+                if self.wait_for_captcha_solved:
+                    req = input("There is persistent captcha, please solve it. If you want to quit, type `q` and then enter.")
+                    if req == "q":
+                        page.close()
+                        return {}
+                else:
+                    raise PermanentCaptchaException("Browser stuck on the CAPTCHA permanently.")
+            else:
+                page.close()
+                
+                self.close()
+                self.launch()
+    
+                self.restarted = True
+                return self.get_search_request_args()
         except TimeoutError:
             pass
         
@@ -146,13 +140,65 @@ class BrowserManager:
             time.sleep(2)
         except TimeoutError:
             print("Button didn't appear within 5 seconds")
+
+    def get_search_request_args(self) -> dict:
+        """Get headers and cookies required for requests to Google.
+
+        Preconditions:
+            - `launch()` has been called.
+            - `close()` has not been called.
+
+        Returns:
+            A dictionary with keys:
+                "cookies": for cookies dictionary and 
+                "headers": for headers dictionary sufficient to make
+                for a working request to https://www.google.com search.
+        """
+        return self.get_request_args("https://www.google.com/search?", to_solve_captcha=True)
+
+    def get_request_args(self, url, to_solve_captcha=False) -> dict:
+        """Get headers and cookies required for requests to domain of `url`.
+
+        Preconditions:
+            - `launch()` has been called.
+            - `close()` has not been called.
+
+        Returns:
+            A dictionary with keys:
+                "cookies": for cookies dictionary and 
+                "headers": for headers dictionary sufficient to make
+                for a working request to `url`.
+        """
+        page = self.context.new_page()
+        headers, remove_listener = self.set_header_listener(page, url)
     
-        cookies = {cookie['name']: cookie['value'] for cookie in self.context.cookies()}
- 
+        page.goto(URL, wait_until="commit", timeout=10000)
+
+        if to_solve_captcha:
+            self.solve_captcha(page)
+        else:
+            time.sleep(5)
+            self.restarted = False
+
+        domain = re.match(r"(https?://)([^/:?#]+)", url)[2]
+        domain = domain.replace("www.", "")
+
+        cookies = {cookie['name']: cookie['value'] for cookie in self.context.cookies() 
+                   if cookie['domain'].endswith(domain)}
+        # self.cookies_time = {cookie['name']: cookie['expires'] for cookie in self.context.cookies()}
+
+        remove_listener()
         page.close()
 
-        self.restarted = False
-        return cookies, headers
+        return {"headers": headers, "cookies": cookies}
+
+    def check_expires_cookies(self):
+        now = time.time()
+        for cookie, expires in self.cookies_time.items():
+            if expires < now:
+                return True
+
+        return False
 
     def close(self) -> None:
         """Close chrome instance, and connection to it.
